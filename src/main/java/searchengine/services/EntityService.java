@@ -1,6 +1,5 @@
 package searchengine.services;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.config.SitesList;
 import searchengine.model.*;
@@ -25,17 +24,21 @@ import java.util.regex.Pattern;
 @Service
 public class EntityService {
 
-    @Autowired
-    private SiteRepository siteRepository;
+    private final SiteRepository siteRepository;
 
-    @Autowired
-    private PageRepository pageRepository;
+    private final PageRepository pageRepository;
 
-    @Autowired
-    private LemmaRepository lemmaRepository;
+    private final LemmaRepository lemmaRepository;
 
-    @Autowired
-    private SearchingIndexRepository indexRepository;
+    private final SearchingIndexRepository indexRepository;
+
+    public EntityService(SiteRepository siteRepository, PageRepository pageRepository,
+                         LemmaRepository lemmaRepository, SearchingIndexRepository indexRepository) {
+        this.siteRepository = siteRepository;
+        this.pageRepository = pageRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.indexRepository = indexRepository;
+    }
 
     public void saveSite(Site site) {
         siteRepository.save(site);
@@ -239,13 +242,16 @@ public class EntityService {
         indexRepository.save(index);
     }
 
-    /**
-     * Метод, удаляющий из бд все индексы, леммы и страницы.
-     */
-    public void deleteIndexesLemmasAndPages() {
-        indexRepository.deleteAll();
-        lemmaRepository.deleteAll();
-        pageRepository.deleteAll();
+    public void deleteIndex(SearchingIndex index) {
+        indexRepository.delete(index);
+    }
+
+    public void deleteLemma(Lemma lemma) {
+        lemmaRepository.delete(lemma);
+    }
+
+    public void deletePage(Page page) {
+        pageRepository.delete(page);
     }
 
     /**

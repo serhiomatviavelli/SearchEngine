@@ -16,7 +16,7 @@ import java.util.List;
 @Service
 public class Lemmatisator {
 
-    LuceneMorphology luceneMorph = new RussianLuceneMorphology();
+    private final LuceneMorphology luceneMorph = new RussianLuceneMorphology();
 
     public Lemmatisator() throws IOException {
     }

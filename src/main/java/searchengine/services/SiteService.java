@@ -5,7 +5,6 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.config.SitesList;
 import searchengine.dto.result.RelevancePage;
@@ -34,17 +33,21 @@ import java.util.stream.Collectors;
 @Service
 public class SiteService {
 
-    @Autowired
-    private SitesList sitesList;
+    private final SitesList sitesList;
 
-    @Autowired
-    private Lemmatisator lemmatisator;
+    private final Lemmatisator lemmatisator;
 
-    @Autowired
-    private EntityService entityService;
+    private final EntityService entityService;
 
     private boolean indexingStart = false;
     private boolean indexingStop = false;
+
+    public SiteService(SitesList sitesList, Lemmatisator lemmatisator, EntityService entityService) {
+        this.sitesList = sitesList;
+        this.lemmatisator = lemmatisator;
+        this.entityService = entityService;
+    }
+
 
     /**
      * Метод, начинающий индексацию сайтов.
@@ -87,41 +90,75 @@ public class SiteService {
     }
 
     /**
-     * Метод, индексирующий заданную страницу по url.
+     * Метод, индексирующий заданную страницу по url, либо обновляющий ее.
      * @param url - url страницы, которую необходимо проиндексировать.
      * @throws IOException
      */
     public void indexPage(String url) throws IOException {
-        List<Page> pageByUrl = entityService.getPagesByPath(url);
-        if (pageByUrl.size() != 0 &&
-            entityService.getIndexesCountByPage(pageByUrl.get(0)) != 0) {
-            entityService.deleteIndexesLemmasAndPages();
-        }
-
         String parentUrl = entityService.getParentUrl(url);
+        String path = url.substring(url.indexOf(parentUrl) + parentUrl.length());
 
-        if (parentUrl != null) {
-            Connection.Response response = Jsoup.connect(url).execute();
+        List<Page> pagesByUrl = entityService.getPagesByPath(path);
+        if (pagesByUrl.size() != 0 &&
+                entityService.getIndexesCountByPage(pagesByUrl.get(0)) != 0) {
+            updatePage(entityService.getPageByPath(path));
+        } else {
+            indexingPage(url);
+        }
+    }
 
-            if (response.statusCode() == 200) {
-                Site site = entityService.getSiteByUrl(parentUrl);
-                Page page = entityService.saveNewPage(site, url, response.statusCode(), response.body());
+    /**
+     * Метод, индексирующий страницу.
+     * @param url - адрес страницы, которую необходимо проиндексировать.
+     * @throws IOException
+     */
+    public void indexingPage(String url) throws IOException {
+        Connection.Response response = Jsoup.connect(url).execute();
 
-                HashMap<String, Integer> lemmas = getLemmasList(response.body());
-                for (Map.Entry<String, Integer> map : lemmas.entrySet()) {
-                    List<Lemma> lemmaByLemma = entityService.getLemmasByLemma(map.getKey());
-                    if (!lemmaByLemma.isEmpty()) {
-                        Lemma lemma = entityService.getLemmaByLemma(map.getKey());
-                        lemma.setFrequency(lemma.getFrequency() + 1);
-                        entityService.saveLemma(lemma);
-                    } else {
-                        entityService.saveNewLemma(site, map.getKey());
-                    }
-                    entityService.saveNewIndex(page, entityService.getLemmaByLemma(map.getKey()), map.getValue().floatValue());
+        if (response.statusCode() == 200) {
+            Site site = entityService.getSiteByUrl(getParentUrl(url));
+            Page page = entityService.saveNewPage(site, url, response.statusCode(), response.body());
+
+            HashMap<String, Integer> lemmas = getLemmasList(response.body());
+            for (Map.Entry<String, Integer> map : lemmas.entrySet()) {
+                List<Lemma> lemmaByLemma = entityService.getLemmasByLemma(map.getKey());
+                if (!lemmaByLemma.isEmpty()) {
+                    Lemma lemma = entityService.getLemmaByLemma(map.getKey());
+                    lemma.setFrequency(lemma.getFrequency() + 1);
+                    entityService.saveLemma(lemma);
+                } else {
+                    entityService.saveNewLemma(site, map.getKey());
                 }
-                entityService.saveSiteDate(site);
+                entityService.saveNewIndex(page, entityService.getLemmaByLemma(map.getKey()), map.getValue().floatValue());
+            }
+            entityService.saveSiteDate(site);
+        }
+    }
+
+    /**
+     * Метод, обновления существующей страницы.
+     * @param page - страница, которую необходимо обновить.
+     */
+    public void updatePage(Page page) throws IOException {
+        String fullAddress = entityService.getFullAddressByUri(page.getPath());
+        List<SearchingIndex> indexes = entityService.getIndexesByPage(page);
+        for (SearchingIndex index : indexes) {
+            Lemma lemma = index.getLemma();
+            List<Lemma> lemmasWithOneFrequency = new ArrayList<>();
+            if (lemma.getFrequency() == 1) {
+                lemmasWithOneFrequency.add(lemma);
+            } else {
+                lemma.setFrequency(lemma.getFrequency() - 1);
+                entityService.saveLemma(lemma);
+            }
+            entityService.deleteIndex(index);
+            for (Lemma lemmaWithOneFrequency : lemmasWithOneFrequency) {
+                entityService.deleteLemma(lemmaWithOneFrequency);
             }
         }
+        entityService.deletePage(page);
+
+        indexingPage(fullAddress);
     }
 
     /**
@@ -134,24 +171,25 @@ public class SiteService {
         List<DetailedStatisticsItem> statisticsList = new ArrayList<>();
 
         for (Site site : entityService.getAllSites()) {
-            DetailedStatisticsItem detailedStatisticsItem = new DetailedStatisticsItem();
-
-            detailedStatisticsItem.setUrl(site.getUrl());
-            detailedStatisticsItem.setName(site.getName());
-            detailedStatisticsItem.setStatus(site.getStatus().toString());
-            detailedStatisticsItem.setStatusTime(convertDateToLong(site.getStatusTime()));
-            detailedStatisticsItem.setError(site.getLastError());
-            detailedStatisticsItem.setPages(entityService.getPagesCountBySite(site));
-            detailedStatisticsItem.setLemmas(entityService.getLemmasCountBySite(site));
+            DetailedStatisticsItem detailedStatisticsItem = DetailedStatisticsItem.builder()
+                            .url(site.getUrl())
+                            .name(site.getName())
+                            .status(site.getStatus().toString())
+                            .statusTime(convertDateToLong(site.getStatusTime()))
+                            .error(site.getLastError())
+                            .pages(entityService.getPagesCountBySite(site))
+                            .lemmas(entityService.getLemmasCountBySite(site))
+                            .build();
 
             statisticsList.add(detailedStatisticsItem);
         }
 
-        TotalStatistics totalStatistics = new TotalStatistics();
-        totalStatistics.setSites(entityService.getAllSitesCount());
-        totalStatistics.setPages(entityService.getAllPagesCount());
-        totalStatistics.setLemmas(entityService.getAllLemmasCount());
-        totalStatistics.setIndexing(indexingStart);
+        TotalStatistics totalStatistics = TotalStatistics.builder()
+                        .sites(entityService.getAllSitesCount())
+                        .pages(entityService.getAllPagesCount())
+                        .lemmas(entityService.getAllLemmasCount())
+                        .indexing(indexingStart)
+                        .build();
 
         data.setTotal(totalStatistics);
         data.setDetailed(statisticsList);

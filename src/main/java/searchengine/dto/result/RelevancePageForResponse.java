@@ -6,6 +6,6 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class RelevancePageForResponse extends RelevancePage {
-    String site;
-    String siteName;
+    private String site;
+    private String siteName;
 }

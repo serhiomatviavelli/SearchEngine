@@ -1,6 +1,5 @@
 package searchengine.services;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -12,11 +11,9 @@ import java.util.concurrent.RecursiveAction;
 @Service
 public class RecursivePageWalker extends RecursiveAction {
 
-    @Autowired
-    private WebSiteTree webSiteTree;
+    private final WebSiteTree webSiteTree;
 
-    @Autowired
-    private SiteService siteService;
+    private final SiteService siteService;
 
     private static CopyOnWriteArrayList<String> linksPool = new CopyOnWriteArrayList();
 
