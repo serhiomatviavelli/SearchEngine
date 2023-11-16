@@ -8,7 +8,9 @@ import searchengine.dto.response.IndexingResponse;
 import searchengine.dto.response.SearchSuccessResponse;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.dto.result.RelevancePage;
-import searchengine.services.SiteService;
+import searchengine.services.IndexingService;
+import searchengine.services.SearchService;
+import searchengine.services.StatisticsService;
 
 import java.io.IOException;
 import java.util.List;
@@ -17,43 +19,49 @@ import java.util.List;
 @RequestMapping("/api")
 public class ApiController {
 
-    private final SiteService siteService;
+    private final IndexingService indexingService;
 
-    public ApiController(SiteService siteService) {
-        this.siteService = siteService;
-    }
+    private final SearchService searchService;
+
+    private final StatisticsService statisticsService;
+
+        public ApiController(IndexingService indexingService, SearchService searchService, StatisticsService statisticsService) {
+            this.indexingService = indexingService;
+            this.searchService = searchService;
+            this.statisticsService = statisticsService;
+        }
 
     @GetMapping(value = "/statistics", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<StatisticsResponse> statistics() {
-        return ResponseEntity.ok().body(siteService.getStatistics());
+        return ResponseEntity.ok().body(statisticsService.getStatisticsForResponse());
     }
 
     @GetMapping(value = "/startIndexing", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<IndexingResponse> startIndexing() {
-        if(siteService.isIndexingStart()) {
+        if(indexingService.isIndexingStart()) {
             return ResponseEntity.badRequest().body(new IndexingFailedResponse( "Индексация уже запущена"));
         } else {
-            siteService.startIndexing();
+            indexingService.startIndexing();
             return ResponseEntity.ok().body(new IndexingResponse());
         }
     }
 
     @GetMapping(value = "/stopIndexing", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<IndexingResponse> stopIndexing() {
-        if (!siteService.isIndexingStart()) {
+        if (!indexingService.isIndexingStart()) {
             return ResponseEntity.badRequest().body(new IndexingFailedResponse("Индексация не запущена"));
         }
-        siteService.stopIndexing();
+        indexingService.stopIndexing();
         return ResponseEntity.ok().body(new IndexingResponse());
     }
 
     @RequestMapping(value = "/indexPage", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<IndexingResponse> indexPage(@RequestParam("url") String url) throws IOException {
-        if (siteService.getParentUrl(url) == null) {
+        if (indexingService.getParentUrl(url) == null) {
             return ResponseEntity.badRequest().body(new IndexingFailedResponse(
                     "Данная страница находится за пределами сайтов, указанных в конфигурационном файле"));
         }
-        siteService.indexPage(url);
+        indexingService.indexPage(url);
         return ResponseEntity.ok().body(new IndexingResponse());
     }
 
@@ -61,16 +69,21 @@ public class ApiController {
     public Object search(@RequestParam(value = "query") String query,
                                                    @RequestParam(value = "site", required = false) String site,
                                                    @RequestParam(value = "offset", defaultValue = "0", required = false) int offset,
-                                                   @RequestParam(value = "limit", defaultValue = "20", required = false) int limit) throws IOException {
-        if (siteService.search(query, site, offset, limit) == null) {
+                                                   @RequestParam(value = "limit", defaultValue = "20", required = false) int limit) {
+        List<RelevancePage> result = searchService.search(query, site, offset, limit);
+        if (result == null) {
             return ResponseEntity.badRequest().body(new IndexingFailedResponse(
                     "Задан пустой поисковый запрос"));
-        } else if (siteService.search(query, site, offset, limit).isEmpty()) {
+        } else if (result.isEmpty()) {
             return ResponseEntity.badRequest().body(new IndexingFailedResponse(
                     "Совпадения не найдены"));
         } else {
-            List<RelevancePage> pages = siteService.search(query, site, offset, limit);
-            return ResponseEntity.ok().body(new SearchSuccessResponse(true, pages.size(), siteService.getPagesForResponse(pages)));
+            return ResponseEntity.ok()
+                    .body(new SearchSuccessResponse(true, result.size(),
+                            searchService.getPagesForResponse(result)
+                                    .subList(offset,
+                                            (offset + limit > result.size()) ? offset + result.size() % limit : offset + limit)));
+
         }
     }
 }

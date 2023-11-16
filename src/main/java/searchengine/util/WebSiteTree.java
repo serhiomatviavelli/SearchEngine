@@ -1,13 +1,13 @@
-package searchengine.services;
+package searchengine.util;
 
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Сервис, представляющий карту сайта.
  */
-@Service
+@Component
 public class WebSiteTree {
 
     private String url;

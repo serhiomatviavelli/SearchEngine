@@ -1,9 +1,12 @@
-package searchengine.services;
+package searchengine.util;
 
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.jsoup.Jsoup;
-import org.springframework.stereotype.Service;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -13,7 +16,7 @@ import java.util.List;
 /**
  * Сервис для работы с морфологическими формами.
  */
-@Service
+@Component
 public class Lemmatisator {
 
     private final LuceneMorphology luceneMorph = new RussianLuceneMorphology();
@@ -49,7 +52,14 @@ public class Lemmatisator {
      * @return - чистый текст.
      */
     public String clearFromTags(String htmlCode) {
-        return Jsoup.parse(htmlCode).text();
+        Document doc = Jsoup.parse(htmlCode);
+        Elements elements = doc.select("*");
+        for (Element element : elements) {
+            if (element.is("meta,script,img,style,form,hidden")) {
+                element.remove();
+            }
+        }
+        return doc.text();
     }
 
     /**
@@ -88,7 +98,7 @@ public class Lemmatisator {
      */
     public List<String> getRussianWordsFromString(String str) {
         List<String> words = new ArrayList<>();
-        String onlyRussianWords = str.replaceAll("[^а-яА-ЯЁё\\s]", "").toLowerCase().trim();
+        String onlyRussianWords = clearFromTags(str).replaceAll("[^а-яА-ЯЁё\\s]", "").toLowerCase().trim();
         String[] array = onlyRussianWords.split("\\s+");
         for (String word : array) {
             if(isWord(word)) {
@@ -115,5 +125,14 @@ public class Lemmatisator {
             }
         }
         return word;
+    }
+
+    /**
+     * Метод, вычисляющий леммы на одной странице.
+     * @param code - код страницы.
+     * @return - список лемм.
+     */
+    public HashMap<String, Integer> getLemmasList(String code) {
+        return splitTextInToLemmas(code);
     }
 }

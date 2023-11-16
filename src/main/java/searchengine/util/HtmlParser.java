@@ -1,11 +1,11 @@
-package searchengine.services;
+package searchengine.util;
 
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentSkipListSet;
 
@@ -14,7 +14,7 @@ import static java.lang.Thread.sleep;
 /**
  * Сервис, производящий парсинг html-кода страницы.
  */
-@Service
+@Component
 public class HtmlParser {
 
     private static ConcurrentSkipListSet<String> links;

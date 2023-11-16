@@ -1,7 +1,6 @@
 package searchengine.services;
 
 import lombok.Builder;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
@@ -9,18 +8,23 @@ import searchengine.dto.statistics.DetailedStatisticsItem;
 import searchengine.dto.statistics.StatisticsData;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.dto.statistics.TotalStatistics;
+import searchengine.util.EntityService;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
 @Builder
 @Service
-@RequiredArgsConstructor
 public class StatisticsServiceImpl implements StatisticsService {
 
     private final Random random = new Random();
     private final SitesList sites;
+    private EntityService entityService;
+    private IndexingService indexingService;
     private final String[] statuses = { "INDEXED", "FAILED", "INDEXING" };
     private final String[] errors = {
             "Ошибка индексации: главная страница сайта не доступна",
@@ -28,6 +32,11 @@ public class StatisticsServiceImpl implements StatisticsService {
             ""
     };
 
+    public StatisticsServiceImpl(SitesList sites, EntityService entityService, IndexingService indexingService) {
+        this.sites = sites;
+        this.entityService = entityService;
+        this.indexingService = indexingService;
+    }
 
     @Override
     public StatisticsResponse getStatistics() {
@@ -70,5 +79,54 @@ public class StatisticsServiceImpl implements StatisticsService {
         response.setResult(true);
 
         return response;
+    }
+
+    /**
+     * Метод, возвращающий статистику.
+     * @return - статистика всех проиндексированных сайтов.
+     */
+    @Override
+    public StatisticsResponse getStatisticsForResponse() {
+        StatisticsResponse response = new StatisticsResponse();
+        StatisticsData data = new StatisticsData();
+        List<DetailedStatisticsItem> statisticsList = new ArrayList<>();
+
+        for (searchengine.model.entity.Site site : entityService.getAllSites()) {
+            DetailedStatisticsItem detailedStatisticsItem = DetailedStatisticsItem.builder()
+                    .url(site.getUrl())
+                    .name(site.getName())
+                    .status(site.getStatus().toString())
+                    .statusTime(convertDateToLong(site.getStatusTime()))
+                    .error(site.getLastError())
+                    .pages(entityService.getPagesCountBySite(site))
+                    .lemmas(entityService.getLemmasCountBySite(site))
+                    .build();
+
+            statisticsList.add(detailedStatisticsItem);
+        }
+
+        TotalStatistics totalStatistics = TotalStatistics.builder()
+                .sites(entityService.getAllSitesCount())
+                .pages((int)entityService.getAllPagesCount())
+                .lemmas(entityService.getAllLemmasCount())
+                .indexing(indexingService.isIndexingStart())
+                .build();
+
+        data.setTotal(totalStatistics);
+        data.setDetailed(statisticsList);
+
+        response.setStatistics(data);
+        response.setResult(true);
+        return response;
+    }
+
+    /**
+     * Метод, конвертирующий Date в long (нужен для статистики).
+     * @param date - дата.
+     * @return - количество миллисекунд с 1 января 1970 года.
+     */
+    public long convertDateToLong(LocalDateTime date) {
+        ZonedDateTime zdt = ZonedDateTime.of(date, ZoneId.systemDefault());
+        return zdt.toInstant().toEpochMilli();
     }
 }

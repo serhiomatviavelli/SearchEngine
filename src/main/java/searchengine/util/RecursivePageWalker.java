@@ -1,6 +1,7 @@
-package searchengine.services;
+package searchengine.util;
 
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
+import searchengine.services.IndexingService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,18 +9,18 @@ import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.RecursiveAction;
 
-@Service
+@Component
 public class RecursivePageWalker extends RecursiveAction {
 
     private final WebSiteTree webSiteTree;
 
-    private final SiteService siteService;
+    private final IndexingService indexingService;
 
-    private static CopyOnWriteArrayList<String> linksPool = new CopyOnWriteArrayList();
+    private static final CopyOnWriteArrayList<String> linksPool = new CopyOnWriteArrayList();
 
-    public RecursivePageWalker(WebSiteTree webSiteTree, SiteService siteService) {
+    public RecursivePageWalker(WebSiteTree webSiteTree, IndexingService indexingService) {
         this.webSiteTree = webSiteTree;
-        this.siteService = siteService;
+        this.indexingService = indexingService;
     }
 
     @Override
@@ -38,8 +39,8 @@ public class RecursivePageWalker extends RecursiveAction {
 
         for (WebSiteTree child : webSiteTree.getChildren()) {
             try {
-                siteService.indexPage(child.getUrl());
-                RecursivePageWalker recursivePageWalker = new RecursivePageWalker(child, siteService);
+                indexingService.indexPage(child.getUrl());
+                RecursivePageWalker recursivePageWalker = new RecursivePageWalker(child, indexingService);
                 recursivePageWalker.fork();
                 recursivePageWalkerList.add(recursivePageWalker);
             } catch (Exception e) {

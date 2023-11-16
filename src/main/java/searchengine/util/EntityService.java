@@ -1,16 +1,16 @@
-package searchengine.services;
+package searchengine.util;
 
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import searchengine.config.SitesList;
 import searchengine.model.*;
 import searchengine.model.entity.Lemma;
 import searchengine.model.entity.Page;
 import searchengine.model.entity.SearchingIndex;
 import searchengine.model.entity.Site;
-import searchengine.model.repo.LemmaRepository;
-import searchengine.model.repo.PageRepository;
-import searchengine.model.repo.SearchingIndexRepository;
-import searchengine.model.repo.SiteRepository;
+import searchengine.model.repository.LemmaRepository;
+import searchengine.model.repository.PageRepository;
+import searchengine.model.repository.SearchingIndexRepository;
+import searchengine.model.repository.SiteRepository;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -19,9 +19,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Сервис, обрабатывающий запросы к БД.
+ * Класс, обрабатывающий запросы к БД.
  */
-@Service
+@Component
 public class EntityService {
 
     private final SiteRepository siteRepository;
@@ -118,12 +118,8 @@ public class EntityService {
         return pageRepository.findBySite(site).size();
     }
 
-    public List<Page> getAllPages() {
-        return pageRepository.findAll();
-    }
-
-    public int getAllPagesCount() {
-        return getAllPages().size();
+    public long getAllPagesCount() {
+        return pageRepository.count();
     }
 
     public List<Page> getPagesByPath(String path) {
