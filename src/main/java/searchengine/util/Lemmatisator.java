@@ -1,6 +1,7 @@
 package searchengine.util;
 
 import org.apache.lucene.morphology.LuceneMorphology;
+import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -19,7 +20,8 @@ import java.util.List;
 @Component
 public class Lemmatisator {
 
-    private final LuceneMorphology luceneMorph = new RussianLuceneMorphology();
+    private final LuceneMorphology luceneMorphRus = new RussianLuceneMorphology();
+    private final LuceneMorphology luceneMorphEng = new EnglishLuceneMorphology();
 
     public Lemmatisator() throws IOException {
     }
@@ -31,7 +33,7 @@ public class Lemmatisator {
      */
     public HashMap<String, Integer> splitTextInToLemmas(String text) {
         HashMap<String, Integer> result = new HashMap<>();
-        List<String> words = getRussianWordsFromString(text);
+        List<String> words = getWordsFromString(text);
         for (String word : words) {
             int count = 0;
             String normalForm = getLemma(word);
@@ -55,7 +57,7 @@ public class Lemmatisator {
         Document doc = Jsoup.parse(htmlCode);
         Elements elements = doc.select("*");
         for (Element element : elements) {
-            if (element.is("meta,script,img,style,form,hidden")) {
+            if (element.is("meta,script,img,style,form,hidden,title")) {
                 element.remove();
             }
         }
@@ -70,7 +72,8 @@ public class Lemmatisator {
     public boolean isWord(String str) {
         return !getWordInfo(str).equals(str.trim() + "|n СОЮЗ") &&
                 !getWordInfo(str).equals(str.trim() + "|o МЕЖД") &&
-                !getWordInfo(str).equals(str.trim() + "|l ПРЕДЛ");
+                !getWordInfo(str).equals(str.trim() + "|l ПРЕДЛ") &&
+                !getWordInfo(str).equals(str.trim() + "|1 CONJ");
     }
 
     /**
@@ -79,7 +82,11 @@ public class Lemmatisator {
      * @return - лемма.
      */
     public String getLemma(String word) {
-        return luceneMorph.getNormalForms(word).get(0).trim();
+        if (isRussianWord(word)) {
+            return luceneMorphRus.getNormalForms(word).get(0).trim();
+        } else {
+            return luceneMorphEng.getNormalForms(word).get(0).trim();
+        }
     }
 
     /**
@@ -88,7 +95,11 @@ public class Lemmatisator {
      * @return - информация.
      */
     public String getWordInfo(String word) {
-        return luceneMorph.getMorphInfo(word.trim()).get(0);
+        if (isRussianWord(word)) {
+            return luceneMorphRus.getMorphInfo(word.trim()).get(0);
+        } else {
+            return luceneMorphEng.getMorphInfo(word.trim()).get(0);
+        }
     }
 
     /**
@@ -96,10 +107,10 @@ public class Lemmatisator {
      * @param str - строка.
      * @return - список слов на кириллице.
      */
-    public List<String> getRussianWordsFromString(String str) {
+    public List<String> getWordsFromString(String str) {
         List<String> words = new ArrayList<>();
-        String onlyRussianWords = clearFromTags(str).replaceAll("[^а-яА-ЯЁё\\s]", "").toLowerCase().trim();
-        String[] array = onlyRussianWords.split("\\s+");
+        String text = clearFromTags(str).replaceAll("[^a-zA-Zа-яА-ЯЁё\\s]", "").toLowerCase().trim();
+        String[] array = text.split("\\s+");
         for (String word : array) {
             if(isWord(word)) {
                 words.add(word);
@@ -115,11 +126,18 @@ public class Lemmatisator {
      * @return - однокоренное слово из текста, либо слово из параметров.
      */
     public String getCognateWord(String text, String word) {
-        List<String> forms = luceneMorph.getNormalForms(word);
-        List<String> words = getRussianWordsFromString(text);
+        List<String> forms;
+        if (isRussianWord(word)) {
+            forms = luceneMorphRus.getNormalForms(word);
+        } else {
+            forms = luceneMorphEng.getNormalForms(word);
+        }
+        List<String> words = getWordsFromString(text);
         for (String form : forms) {
             for (String wordFromText : words) {
-                if (luceneMorph.getNormalForms(wordFromText).get(0).equals(form)) {
+                if (isRussianWord(wordFromText) && luceneMorphRus.getNormalForms(wordFromText).get(0).equals(form)) {
+                    return wordFromText;
+                } else if (!isRussianWord(wordFromText) && luceneMorphEng.getNormalForms(wordFromText).get(0).equals(form)) {
                     return wordFromText;
                 }
             }
@@ -134,5 +152,14 @@ public class Lemmatisator {
      */
     public HashMap<String, Integer> getLemmasList(String code) {
         return splitTextInToLemmas(code);
+    }
+
+    /**
+     * Метод, проверяющий русское ли слово задано.
+     * @param word - слово, которое необходимо проверить.
+     * @return - true, если слово русское.
+     */
+    public boolean isRussianWord(String word) {
+        return word.matches("[а-яА-ЯёЁ]{" + word.length() + "}");
     }
 }

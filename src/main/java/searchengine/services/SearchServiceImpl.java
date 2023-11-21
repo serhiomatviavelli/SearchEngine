@@ -38,14 +38,13 @@ public class SearchServiceImpl implements SearchService {
      * @param offset - указатель, на какой странице находится пользователь.
      * @param limit - количество совпадений на одной странице.
      * @return - список найденных совпадений.
-     * @throws IOException
      */
     @Override
     public List<RelevancePage> search(String query, String site, int offset, int limit) {
         if (query.trim().isEmpty()) {
             return null;
         }
-
+        query = query.toLowerCase();
         List<Page> pages;
         if (site == null) {
             Lemma firstWordInQueryLemma = entityService.getLemmaByLemma(lemmatisator.getLemma(query.split("\\s+")[0]));
@@ -55,7 +54,6 @@ public class SearchServiceImpl implements SearchService {
             Site siteByUrl = entityService.getSiteByUrl(site);
             pages = entityService.getPagesBySite(siteByUrl);
         }
-
         List<Lemma> lemmasList = getLemmasListForSearching(query);
 
         sortLemmasByFrequency(lemmasList);
@@ -211,20 +209,16 @@ public class SearchServiceImpl implements SearchService {
                 }
             }
         } else {
-            for (int i = 0; i < lemmasList.size() - 1; i++) {
-                List<SearchingIndex> indexesByLemma = entityService.getIndexesByLemmaAndPages(lemmasList.get(i), pages);
-                List<SearchingIndex> indexesByNextLemma = entityService.getIndexesByLemmaAndPages(lemmasList.get(i + 1), pages);
-                List<Page> pagesList = indexesByLemma.stream().map(SearchingIndex::getPage).toList();
-                for (SearchingIndex index : indexesByNextLemma) {
-                    for (Page page : pagesList) {
-                        if (index.getPage().equals(page)
-                                && page.getContent().contains(getNewQuery(page.getContent(), query))
-                                && pages.contains(page)
-                                && !isRelevancePageExist(relevancePages, getSnippet(page.getPath(), query))) {
-                            relevancePages.add(getNewRelevancePage(page.getPath(), getTitle(page.getContent())
+            String firstWordLemma = lemmatisator.getLemma(query.split("\\s+")[0]);
+            Lemma lemmaByFirstWordLemma = entityService.getLemmaByLemma(firstWordLemma);
+            List<SearchingIndex> indexesByLemma = entityService.getIndexesByLemma(lemmaByFirstWordLemma);
+            List<Page> pagesList = indexesByLemma.stream().map(SearchingIndex::getPage).toList();
+            for (Page page : pagesList) {
+                String newQuery = getNewQuery(lemmatisator.clearFromTags(page.getContent()), query);
+                if (page.getContent().toLowerCase().contains(newQuery) &&
+                        pages.contains(page)) {
+                    relevancePages.add(getNewRelevancePage(page.getPath(), getTitle(page.getContent())
                                     , getSnippet(page.getPath(), query), getRelevance(page)));
-                        }
-                    }
                 }
             }
         }
@@ -250,16 +244,6 @@ public class SearchServiceImpl implements SearchService {
             }
         }
         return builder.toString().trim();
-    }
-
-    /**
-     * Метод, проверяющий существует ли в списке для вывода результатов страница по сниппету.
-     * @param pages - список страниц для вывода.
-     * @param snippet - сниппет, по которому происходит поиск.
-     * @return - true - если страница существует.
-     */
-    public boolean isRelevancePageExist(List<RelevancePage> pages, String snippet) {
-        return pages.stream().anyMatch(page -> page.getSnippet().equals(snippet));
     }
 
     /**
