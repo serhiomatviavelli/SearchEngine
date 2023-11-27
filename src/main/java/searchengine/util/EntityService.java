@@ -13,7 +13,6 @@ import searchengine.model.repository.SearchingIndexRepository;
 import searchengine.model.repository.SiteRepository;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -149,10 +148,6 @@ public class EntityService {
         return page;
     }
 
-    public List<Page> getPagesBySite(Site site) {
-        return pageRepository.findBySite(site);
-    }
-
     public List<Lemma> getLemmasByLemma(String lemma) {
         return lemmaRepository.findByLemma(lemma);
     }
@@ -204,24 +199,6 @@ public class EntityService {
 
     public List<SearchingIndex> getIndexesByLemma(Lemma lemma) {
         return indexRepository.findByLemma(lemma);
-    }
-
-    /**
-     * Метод, возвращающий список индексов по лемме и страницам.
-     * @param lemma - лемма.
-     * @param pages - список страниц, на которых необходимо найти лемму.
-     * @return - список нужных индексов.
-     */
-    public List<SearchingIndex> getIndexesByLemmaAndPages(Lemma lemma, List<Page> pages) {
-        List<SearchingIndex> indexes = new ArrayList<>();
-        for (SearchingIndex index : getIndexesByLemma(lemma)) {
-            for (Page page : pages) {
-                if (index.getPage().equals(page)) {
-                    indexes.add(index);
-                }
-            }
-        }
-        return indexes;
     }
 
     /**

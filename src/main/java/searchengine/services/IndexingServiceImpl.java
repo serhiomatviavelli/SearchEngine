@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -42,32 +43,37 @@ public class IndexingServiceImpl implements IndexingService {
      */
     @Override
     public void startIndexing() {
-        indexingStart.set(true);
+        Runnable startIndexing = new Runnable() {
+            @Override
+            public void run() {
+                entityService.deleteAllData();
 
-        entityService.deleteAllData();
+                entityService.addIndexingSites(sitesList);
 
-        entityService.addIndexingSites(sitesList);
-
-        for (Site site : entityService.getAllSites()) {
-            try {
-                WebSiteTree webSiteTree = new WebSiteTree(site.getUrl());
-                RecursivePageWalker recursivePageWalker = new RecursivePageWalker(webSiteTree, this);
-                ForkJoinPool forkJoinPool = new ForkJoinPool();
-                forkJoinPool.invoke(recursivePageWalker);
-                if (indexingStop.get()) {
-                    forkJoinPool.shutdownNow();
-                    entityService.stopIndexingInfoAdd();
-                    indexingStop.set(false);
-                    break;
-                } else {
-                    entityService.saveIndexedSiteInfo(site);
+                for (Site site : entityService.getAllSites()) {
+                    try {
+                        WebSiteTree webSiteTree = new WebSiteTree(site.getUrl());
+                        RecursivePageWalker recursivePageWalker = new RecursivePageWalker(webSiteTree, IndexingServiceImpl.this);
+                        ForkJoinPool forkJoinPool = new ForkJoinPool();
+                        forkJoinPool.invoke(recursivePageWalker);
+                        if (indexingStop.get()) {
+                            forkJoinPool.shutdownNow();
+                            entityService.stopIndexingInfoAdd();
+                            indexingStop.set(false);
+                            break;
+                        } else {
+                            entityService.saveIndexedSiteInfo(site);
+                        }
+                        entityService.saveIndexedSiteInfo(site);
+                    } catch (Exception e) {
+                        entityService.saveFailedIndexingSiteInfo(site, e.getMessage());
+                    }
                 }
-                entityService.saveIndexedSiteInfo(site);
-            } catch (Exception e) {
-                entityService.saveFailedIndexingSiteInfo(site, e.getMessage());
+                indexingStart.set(false);
             }
-        }
-        indexingStart.set(false);
+        };
+        CompletableFuture.runAsync(startIndexing);
+        indexingStart.set(true);
     }
 
     /**

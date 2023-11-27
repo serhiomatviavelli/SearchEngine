@@ -39,7 +39,7 @@ public class ApiController {
     @GetMapping(value = "/startIndexing", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<IndexingResponse> startIndexing() {
         if(indexingService.isIndexingStart()) {
-            return ResponseEntity.badRequest().body(new IndexingFailedResponse( "Индексация уже запущена"));
+            return ResponseEntity.ok().body(new IndexingFailedResponse( "Индексация уже запущена"));
         } else {
             indexingService.startIndexing();
             return ResponseEntity.ok().body(new IndexingResponse());
@@ -49,7 +49,7 @@ public class ApiController {
     @GetMapping(value = "/stopIndexing", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<IndexingResponse> stopIndexing() {
         if (!indexingService.isIndexingStart()) {
-            return ResponseEntity.badRequest().body(new IndexingFailedResponse("Индексация не запущена"));
+            return ResponseEntity.ok().body(new IndexingFailedResponse("Индексация не запущена"));
         }
         indexingService.stopIndexing();
         return ResponseEntity.ok().body(new IndexingResponse());
@@ -58,7 +58,7 @@ public class ApiController {
     @RequestMapping(value = "/indexPage", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<IndexingResponse> indexPage(@RequestParam("url") String url) throws IOException {
         if (indexingService.getParentUrl(url) == null) {
-            return ResponseEntity.badRequest().body(new IndexingFailedResponse(
+            return ResponseEntity.ok().body(new IndexingFailedResponse(
                     "Данная страница находится за пределами сайтов, указанных в конфигурационном файле"));
         }
         indexingService.indexPage(url);
@@ -71,11 +71,11 @@ public class ApiController {
                                                    @RequestParam(value = "offset", defaultValue = "0", required = false) int offset,
                                                    @RequestParam(value = "limit", defaultValue = "20", required = false) int limit) {
         List<RelevancePage> result = searchService.search(query, site, offset, limit);
-        if (result == null) {
-            return ResponseEntity.badRequest().body(new IndexingFailedResponse(
+        if (query.length() == 0) {
+            return ResponseEntity.ok().body(new IndexingFailedResponse(
                     "Задан пустой поисковый запрос"));
         } else if (result.isEmpty()) {
-            return ResponseEntity.badRequest().body(new IndexingFailedResponse(
+            return ResponseEntity.ok().body(new IndexingFailedResponse(
                     "Совпадения не найдены"));
         } else {
             return ResponseEntity.ok()

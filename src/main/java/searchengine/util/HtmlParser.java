@@ -17,8 +17,6 @@ import static java.lang.Thread.sleep;
 @Component
 public class HtmlParser {
 
-    private static ConcurrentSkipListSet<String> links;
-
     /**
      * Метод, проверяющий является ли строка ссылкой.
      * @param link - строка, которую необходимо проверить.
@@ -35,7 +33,7 @@ public class HtmlParser {
      * @return - список ссылок, найденных на этой странице.
      */
     public static ConcurrentSkipListSet<String> getLinks(String url) {
-        links = new ConcurrentSkipListSet<>();
+        ConcurrentSkipListSet<String> links = new ConcurrentSkipListSet<>();
         try {
             sleep(150);
             Connection connection = Jsoup.connect(url)
@@ -61,7 +59,7 @@ public class HtmlParser {
      * @return - true - если ссылка является файлом.
      */
     private static boolean isFile(String link) {
-        link.toLowerCase();
+        link = link.toLowerCase();
         return link.contains(".jpg")
                 || link.contains(".jpeg")
                 || link.contains(".png")

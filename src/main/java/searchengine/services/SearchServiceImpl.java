@@ -46,13 +46,14 @@ public class SearchServiceImpl implements SearchService {
         }
         query = query.toLowerCase();
         List<Page> pages;
+        String firstWordInQuery = lemmatisator.getLemma(query.split("\\s+")[0]);
+        Lemma firstWordInQueryLemma = entityService.getLemmaByLemma(firstWordInQuery);
+        List<SearchingIndex> indexes = entityService.getIndexesByLemma(firstWordInQueryLemma);
         if (site == null) {
-            Lemma firstWordInQueryLemma = entityService.getLemmaByLemma(lemmatisator.getLemma(query.split("\\s+")[0]));
-            List<SearchingIndex> indexes = entityService.getIndexesByLemma(firstWordInQueryLemma);
             pages = indexes.stream().map(SearchingIndex::getPage).toList();
         } else {
             Site siteByUrl = entityService.getSiteByUrl(site);
-            pages = entityService.getPagesBySite(siteByUrl);
+            pages = indexes.stream().map(SearchingIndex::getPage).filter(page -> page.getSite().equals(siteByUrl)).toList();
         }
         List<Lemma> lemmasList = getLemmasListForSearching(query);
 
@@ -82,15 +83,15 @@ public class SearchServiceImpl implements SearchService {
 
     /**
      * Метод, возвращающий сниппет с найденным текстовым элементом.
-     * @param path - адрес страницы.
+     * @param page - страница.
      * @param query - поисковый запрос.
      * @return - сниппет.
      * @throws IOException
      */
-    public String getSnippet(String path, String query) throws IOException {
+    public String getSnippet(Page page, String query) throws IOException {
         StringBuilder builder = new StringBuilder();
-        String newQuery = getNewQuery(entityService.getPageByPath(path).getContent(), query).toLowerCase();
-        Connection connection = Jsoup.connect(entityService.getFullAddressByUri(path));
+        String newQuery = getNewQuery(page.getContent(), query).toLowerCase();
+        Connection connection = Jsoup.connect(entityService.getFullAddressByUri(page.getPath()));
         Document doc = connection.get();
         Elements elements = doc.body().select("*");
         for (Element element : elements) {
@@ -202,23 +203,21 @@ public class SearchServiceImpl implements SearchService {
     public List<RelevancePage> getRelevancePages(List<Lemma> lemmasList, List<Page> pages, String query) throws IOException {
         List<RelevancePage> relevancePages = new ArrayList<>();
         if (lemmasList.size() == 1) {
-            for (Page page : pages) {
-                if (page.getContent().toLowerCase().contains(getNewQuery(page.getContent(), query).toLowerCase())) {
+            pages.forEach(page -> {
+                try {
                     relevancePages.add(getNewRelevancePage(page.getPath(),getTitle(page.getContent())
-                            ,getSnippet(page.getPath(), query), getRelevance(page)));
+                                    ,getSnippet(page, query), getRelevance(page)));
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
-            }
+            });
         } else {
-            String firstWordLemma = lemmatisator.getLemma(query.split("\\s+")[0]);
-            Lemma lemmaByFirstWordLemma = entityService.getLemmaByLemma(firstWordLemma);
-            List<SearchingIndex> indexesByLemma = entityService.getIndexesByLemma(lemmaByFirstWordLemma);
-            List<Page> pagesList = indexesByLemma.stream().map(SearchingIndex::getPage).toList();
-            for (Page page : pagesList) {
+            for (Page page : pages) {
                 String newQuery = getNewQuery(lemmatisator.clearFromTags(page.getContent()), query);
                 if (page.getContent().toLowerCase().contains(newQuery) &&
                         pages.contains(page)) {
                     relevancePages.add(getNewRelevancePage(page.getPath(), getTitle(page.getContent())
-                                    , getSnippet(page.getPath(), query), getRelevance(page)));
+                                    , getSnippet(page, query), getRelevance(page)));
                 }
             }
         }

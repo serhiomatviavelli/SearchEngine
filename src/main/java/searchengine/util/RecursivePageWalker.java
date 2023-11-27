@@ -16,7 +16,7 @@ public class RecursivePageWalker extends RecursiveAction {
 
     private final IndexingService indexingService;
 
-    private static final CopyOnWriteArrayList<String> linksPool = new CopyOnWriteArrayList();
+    private static final CopyOnWriteArrayList<String> linksPool = new CopyOnWriteArrayList<>();
 
     public RecursivePageWalker(WebSiteTree webSiteTree, IndexingService indexingService) {
         this.webSiteTree = webSiteTree;
