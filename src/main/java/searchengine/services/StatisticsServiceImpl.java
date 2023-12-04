@@ -6,7 +6,10 @@ import searchengine.dto.statistics.DetailedStatisticsItem;
 import searchengine.dto.statistics.StatisticsData;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.dto.statistics.TotalStatistics;
-import searchengine.util.EntityService;
+import searchengine.model.repository.LemmaRepository;
+import searchengine.model.repository.PageRepository;
+import searchengine.model.repository.SearchingIndexRepository;
+import searchengine.model.repository.SiteRepository;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -18,12 +21,18 @@ import java.util.List;
 @Service
 public class StatisticsServiceImpl implements StatisticsService {
 
-    private EntityService entityService;
     private IndexingService indexingService;
+    private final SearchingIndexRepository indexRepository;
+    private final LemmaRepository lemmaRepository;
+    private final PageRepository pageRepository;
+    private final SiteRepository siteRepository;
 
-    public StatisticsServiceImpl(EntityService entityService, IndexingService indexingService) {
-        this.entityService = entityService;
+    public StatisticsServiceImpl(IndexingService indexingService, SearchingIndexRepository indexRepository, LemmaRepository lemmaRepository, PageRepository pageRepository, SiteRepository siteRepository) {
         this.indexingService = indexingService;
+        this.indexRepository = indexRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.pageRepository = pageRepository;
+        this.siteRepository = siteRepository;
     }
 
     /**
@@ -36,24 +45,24 @@ public class StatisticsServiceImpl implements StatisticsService {
         StatisticsData data = new StatisticsData();
         List<DetailedStatisticsItem> statisticsList = new ArrayList<>();
 
-        for (searchengine.model.entity.Site site : entityService.getAllSites()) {
+        for (searchengine.model.entity.Site site : siteRepository.findAll()) {
             DetailedStatisticsItem detailedStatisticsItem = DetailedStatisticsItem.builder()
                     .url(site.getUrl())
                     .name(site.getName())
                     .status(site.getStatus().toString())
                     .statusTime(convertDateToLong(site.getStatusTime()))
                     .error(site.getLastError())
-                    .pages(entityService.getPagesCountBySite(site))
-                    .lemmas(entityService.getLemmasCountBySite(site))
+                    .pages(pageRepository.findBySite(site).size())
+                    .lemmas(lemmaRepository.findBySite(site).size())
                     .build();
 
             statisticsList.add(detailedStatisticsItem);
         }
 
         TotalStatistics totalStatistics = TotalStatistics.builder()
-                .sites(entityService.getAllSitesCount())
-                .pages((int)entityService.getAllPagesCount())
-                .lemmas(entityService.getAllLemmasCount())
+                .sites((int)siteRepository.count())
+                .pages((int)pageRepository.count())
+                .lemmas((int)lemmaRepository.count())
                 .indexing(indexingService.isIndexingStart())
                 .build();
 

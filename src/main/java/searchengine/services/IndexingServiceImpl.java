@@ -4,16 +4,21 @@ import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
 import searchengine.config.SitesList;
+import searchengine.model.Status;
 import searchengine.model.entity.Lemma;
 import searchengine.model.entity.Page;
 import searchengine.model.entity.SearchingIndex;
 import searchengine.model.entity.Site;
-import searchengine.util.EntityService;
+import searchengine.model.repository.LemmaRepository;
+import searchengine.model.repository.PageRepository;
+import searchengine.model.repository.SearchingIndexRepository;
+import searchengine.model.repository.SiteRepository;
 import searchengine.util.Lemmatisator;
 import searchengine.util.RecursivePageWalker;
 import searchengine.util.WebSiteTree;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -21,21 +26,31 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class IndexingServiceImpl implements IndexingService {
 
-    private final EntityService entityService;
     private final SitesList sitesList;
     private final Lemmatisator lemmatisator;
+    private final SearchingIndexRepository indexRepository;
+    private final LemmaRepository lemmaRepository;
+    private final PageRepository pageRepository;
+    private final SiteRepository siteRepository;
 
     private final AtomicBoolean indexingStart = new AtomicBoolean(false);
     private final AtomicBoolean indexingStop = new AtomicBoolean(false);
 
-    public IndexingServiceImpl(EntityService entityService, SitesList sitesList, Lemmatisator lemmatisator) {
-        this.entityService = entityService;
+    public IndexingServiceImpl(SitesList sitesList, Lemmatisator lemmatisator,
+                               SearchingIndexRepository indexRepository, LemmaRepository lemmaRepository,
+                               PageRepository pageRepository, SiteRepository siteRepository) {
         this.sitesList = sitesList;
         this.lemmatisator = lemmatisator;
+        this.indexRepository = indexRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.pageRepository = pageRepository;
+        this.siteRepository = siteRepository;
     }
 
     /**
@@ -46,11 +61,9 @@ public class IndexingServiceImpl implements IndexingService {
         Runnable startIndexing = new Runnable() {
             @Override
             public void run() {
-                entityService.deleteAllData();
-
-                entityService.addIndexingSites(sitesList);
-
-                for (Site site : entityService.getAllSites()) {
+                deleteAllData();
+                addIndexingSites(sitesList);
+                siteRepository.findAll().parallelStream().forEach(site -> {
                     try {
                         WebSiteTree webSiteTree = new WebSiteTree(site.getUrl());
                         RecursivePageWalker recursivePageWalker = new RecursivePageWalker(webSiteTree, IndexingServiceImpl.this);
@@ -58,17 +71,16 @@ public class IndexingServiceImpl implements IndexingService {
                         forkJoinPool.invoke(recursivePageWalker);
                         if (indexingStop.get()) {
                             forkJoinPool.shutdownNow();
-                            entityService.stopIndexingInfoAdd();
+                            stopIndexingInfoAdd();
                             indexingStop.set(false);
-                            break;
                         } else {
-                            entityService.saveIndexedSiteInfo(site);
+                            saveIndexedSiteInfo(site);
                         }
-                        entityService.saveIndexedSiteInfo(site);
+                        saveIndexedSiteInfo(site);
                     } catch (Exception e) {
-                        entityService.saveFailedIndexingSiteInfo(site, e.getMessage());
+                        saveFailedIndexingSiteInfo(site, e.getMessage());
                     }
-                }
+                });
                 indexingStart.set(false);
             }
         };
@@ -92,14 +104,14 @@ public class IndexingServiceImpl implements IndexingService {
      */
     @Override
     public void indexPage(String url) {
-        String parentUrl = entityService.getParentUrl(url);
+        String parentUrl = getParentUrl(url);
         String path = url.substring(url.indexOf(parentUrl) + parentUrl.length());
 
-        List<Page> pagesByUrl = entityService.getPagesByPath(path);
+        List<Page> pagesByUrl = pageRepository.findByPath(path);
         if (pagesByUrl.size() != 0 &&
-                entityService.getIndexesCountByPage(pagesByUrl.get(0)) != 0) {
+                indexRepository.findByPage(pagesByUrl.get(0)).size() != 0) {
             try {
-                updatePage(entityService.getPageByPath(path));
+                updatePage(pageRepository.findByPath(path).get(0));
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -121,22 +133,23 @@ public class IndexingServiceImpl implements IndexingService {
         Connection.Response response = Jsoup.connect(url).execute();
 
         if (response.statusCode() == 200) {
-            Site site = entityService.getSiteByUrl(getParentUrl(url));
-            Page page = entityService.saveNewPage(site, url, response.statusCode(), response.body());
+            Site site = siteRepository.findByUrl(getParentUrl(url)).get(0);
+            Page page = saveNewPage(site, url, response.statusCode(), response.body());
             String text = lemmatisator.clearFromTags(response.body());
             HashMap<String, Integer> lemmas = lemmatisator.getLemmasList(text);
             for (Map.Entry<String, Integer> map : lemmas.entrySet()) {
-                List<Lemma> lemmaByLemma = entityService.getLemmasByLemma(map.getKey());
+                List<Lemma> lemmaByLemma = lemmaRepository.findByLemma(map.getKey());
                 if (!lemmaByLemma.isEmpty()) {
-                    Lemma lemma = entityService.getLemmaByLemma(map.getKey());
+                    Lemma lemma = lemmaRepository.findByLemma(map.getKey()).get(0);
                     lemma.setFrequency(lemma.getFrequency() + 1);
-                    entityService.saveLemma(lemma);
+                    lemmaRepository.save(lemma);
                 } else {
-                    entityService.saveNewLemma(site, map.getKey());
+                    saveNewLemma(site, map.getKey());
                 }
-                entityService.saveNewIndex(page, entityService.getLemmaByLemma(map.getKey()), map.getValue().floatValue());
+                saveNewIndex(page, lemmaRepository.findByLemma(map.getKey()).get(0), map.getValue().floatValue());
             }
-            entityService.saveSiteDate(site);
+            site.setStatusTime(LocalDateTime.now());
+            siteRepository.save(site);
         }
     }
 
@@ -145,8 +158,8 @@ public class IndexingServiceImpl implements IndexingService {
      * @param page - страница, которую необходимо обновить.
      */
     public void updatePage(Page page) throws IOException {
-        String fullAddress = entityService.getFullAddressByUri(page.getPath());
-        List<SearchingIndex> indexes = entityService.getIndexesByPage(page);
+        String fullAddress = getFullAddressByUri(page.getPath());
+        List<SearchingIndex> indexes = indexRepository.findByPage(page);
         for (SearchingIndex index : indexes) {
             Lemma lemma = index.getLemma();
             List<Lemma> lemmasWithOneFrequency = new ArrayList<>();
@@ -154,14 +167,14 @@ public class IndexingServiceImpl implements IndexingService {
                 lemmasWithOneFrequency.add(lemma);
             } else {
                 lemma.setFrequency(lemma.getFrequency() - 1);
-                entityService.saveLemma(lemma);
+                lemmaRepository.save(lemma);
             }
-            entityService.deleteIndex(index);
+            indexRepository.delete(index);
             for (Lemma lemmaWithOneFrequency : lemmasWithOneFrequency) {
-                entityService.deleteLemma(lemmaWithOneFrequency);
+                lemmaRepository.delete(lemmaWithOneFrequency);
             }
         }
-        entityService.deletePage(page);
+        pageRepository.delete(page);
 
         indexingPage(fullAddress);
     }
@@ -172,13 +185,146 @@ public class IndexingServiceImpl implements IndexingService {
     }
 
     /**
-     * Метод, возвращающий родительский url страницы.
+     * Метод, возвращающий родительский url страницы из БД.
      * @param url - адрес страницы.
-     * @return - адрес родительского сайта.
+     * @return - сайт, которому эта страница принадлежит.
      */
     @Override
     public String getParentUrl(String url) {
-        return entityService.getParentUrl(url);
+        String regex = "(http[s]?://[^#,\\s]*\\.?[a-z]*\\.ru)";
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(url);
+        if (matcher.find() && siteRepository.findByUrl(matcher.group()).size() != 0) {
+            return matcher.group();
+        }
+        return null;
     }
 
+    /**
+     * Метод, возвращающий полный адрес страницы.
+     * @param uri - адрес страницы от корня сайта.
+     * @return - полный адрес страницы.
+     */
+    @Override
+    public String getFullAddressByUri(String uri) {
+        StringBuilder builder = new StringBuilder();
+        Site site = pageRepository.findByPath(uri).get(0).getSite();
+        builder.append(site.getUrl());
+        builder.append(uri);
+        return builder.toString();
+    }
+
+    /**
+     * Метод, удаляющий все данные из БД.
+     */
+    public void deleteAllData() {
+        indexRepository.deleteAll();
+        lemmaRepository.deleteAll();
+        pageRepository.deleteAll();
+        siteRepository.deleteAll();
+    }
+
+    /**
+     * Метод, добавляющий в таблицу site сайты из файла properties.yaml.
+     * @param sitesList - список сайтов из файла properties.yaml.
+     */
+    public void addIndexingSites(SitesList sitesList) {
+        for (searchengine.config.Site siteFromProp : sitesList.getSites()) {
+            Site site = new Site();
+            site.setStatus(Status.INDEXING);
+            site.setStatusTime(LocalDateTime.now());
+            site.setUrl(siteFromProp.getUrl());
+            site.setName(siteFromProp.getName());
+            siteRepository.save(site);
+        }
+    }
+
+    /**
+     * Метод, сохраняющий информацию в таблицу site в случае остановки индексации пользователем.
+     */
+    public void stopIndexingInfoAdd() {
+        for (Site site : siteRepository.findAll()) {
+            if (!site.getStatus().equals(Status.INDEXED)) {
+                site.setStatus(Status.FAILED);
+                site.setStatusTime(LocalDateTime.now());
+                site.setLastError("Индексация остановлена пользователем");
+                siteRepository.save(site);
+            }
+        }
+    }
+
+    /**
+     * Метод, сохраняющий информацию о проиндексированном сайте в таблицу site.
+     * @param site - проиндексированный сайт.
+     */
+    public void saveIndexedSiteInfo(Site site) {
+        site.setStatus(Status.INDEXED);
+        saveSiteDate(site);
+    }
+
+    /**
+     * Метод, меняющий дату последнего обновления сайта в таблице site.
+     * @param site - сайт, дату обновления которого необходимо изменить.
+     */
+    public void saveSiteDate(Site site) {
+        site.setStatusTime(LocalDateTime.now());
+        siteRepository.save(site);
+    }
+
+    /**
+     * Метод, добавляющий информацию о сайте в случае ошибки индексации.
+     * @param site - сайт, при индексации которого произошла ошибка.
+     * @param reason - причина ошибки.
+     */
+    public void saveFailedIndexingSiteInfo(Site site, String reason) {
+        site.setStatus(Status.FAILED);
+        site.setLastError(reason);
+        saveSiteDate(site);
+    }
+
+    /**
+     * Метод, сохраняющий новую страницу в таблицу page.
+     * @param site - сайт, которому принадлежит страница.
+     * @param url - адрес страницы.
+     * @param code - код ответа, полученный при запросе.
+     * @param content - html-код страницы.
+     * @return - страница, добавленная в БД.
+     */
+    public Page saveNewPage(Site site, String url, Integer code, String content) {
+        Page page = new Page();
+        page.setSite(site);
+        page.setPath(url.substring(url.indexOf(getParentUrl(url)) + getParentUrl(url).length()));
+        page.setCode(code);
+        page.setContent(content);
+        pageRepository.save(page);
+
+        return page;
+    }
+
+    /**
+     * Метод, добавляющий новую лемму в таблицу lemma.
+     * @param site - сайт, на котором найдена лемма.
+     * @param lemma - лемма.
+     */
+    public void saveNewLemma(Site site, String lemma) {
+        Lemma newLemma = new Lemma();
+        newLemma.setSite(site);
+        newLemma.setLemma(lemma);
+        newLemma.setFrequency(1);
+        lemmaRepository.save(newLemma);
+    }
+
+    /**
+     * метод, добавляющий новый индекс в таблицу index.
+     * @param page - страница с леммой.
+     * @param lemma - лемма, связанная со страницей.
+     * @param lemmasCount - количество данной леммы для данной страницы.
+     */
+    public void saveNewIndex(Page page, Lemma lemma, Float lemmasCount) {
+        SearchingIndex index = new SearchingIndex();
+        index.setPage(page);
+        index.setLemma(lemma);
+        index.setLemmasCount(lemmasCount);
+        indexRepository.save(index);
+    }
 }

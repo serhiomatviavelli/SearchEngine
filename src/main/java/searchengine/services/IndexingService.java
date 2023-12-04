@@ -11,4 +11,6 @@ public interface IndexingService {
     void indexPage(String url);
 
     String getParentUrl(String path);
+
+    String getFullAddressByUri(String uri);
 }

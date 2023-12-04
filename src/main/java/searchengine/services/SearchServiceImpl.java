@@ -12,7 +12,10 @@ import searchengine.model.entity.Lemma;
 import searchengine.model.entity.Page;
 import searchengine.model.entity.SearchingIndex;
 import searchengine.model.entity.Site;
-import searchengine.util.EntityService;
+import searchengine.model.repository.LemmaRepository;
+import searchengine.model.repository.PageRepository;
+import searchengine.model.repository.SearchingIndexRepository;
+import searchengine.model.repository.SiteRepository;
 import searchengine.util.Lemmatisator;
 
 import java.io.IOException;
@@ -23,12 +26,22 @@ import java.util.regex.Pattern;
 @Service
 public class SearchServiceImpl implements SearchService {
 
-    private final EntityService entityService;
     private final Lemmatisator lemmatisator;
+    private final SearchingIndexRepository indexRepository;
+    private final LemmaRepository lemmaRepository;
+    private final PageRepository pageRepository;
+    private final SiteRepository siteRepository;
+    private final IndexingService indexingService;
 
-    public SearchServiceImpl(EntityService entityService, Lemmatisator lemmatisator) {
-        this.entityService = entityService;
+    public SearchServiceImpl(Lemmatisator lemmatisator, SearchingIndexRepository indexRepository,
+                             LemmaRepository lemmaRepository, PageRepository pageRepository,
+                             SiteRepository siteRepository, IndexingService indexingService) {
         this.lemmatisator = lemmatisator;
+        this.indexRepository = indexRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.pageRepository = pageRepository;
+        this.siteRepository = siteRepository;
+        this.indexingService = indexingService;
     }
 
     /**
@@ -47,12 +60,12 @@ public class SearchServiceImpl implements SearchService {
         query = query.toLowerCase();
         List<Page> pages;
         String firstWordInQuery = lemmatisator.getLemma(query.split("\\s+")[0]);
-        Lemma firstWordInQueryLemma = entityService.getLemmaByLemma(firstWordInQuery);
-        List<SearchingIndex> indexes = entityService.getIndexesByLemma(firstWordInQueryLemma);
+        Lemma firstWordInQueryLemma = lemmaRepository.findByLemma(firstWordInQuery).get(0);
+        List<SearchingIndex> indexes = indexRepository.findByLemma(firstWordInQueryLemma);
         if (site == null) {
             pages = indexes.stream().map(SearchingIndex::getPage).toList();
         } else {
-            Site siteByUrl = entityService.getSiteByUrl(site);
+            Site siteByUrl = siteRepository.findByUrl(site).get(0);
             pages = indexes.stream().map(SearchingIndex::getPage).filter(page -> page.getSite().equals(siteByUrl)).toList();
         }
         List<Lemma> lemmasList = getLemmasListForSearching(query);
@@ -91,7 +104,7 @@ public class SearchServiceImpl implements SearchService {
     public String getSnippet(Page page, String query) throws IOException {
         StringBuilder builder = new StringBuilder();
         String newQuery = getNewQuery(page.getContent(), query).toLowerCase();
-        Connection connection = Jsoup.connect(entityService.getFullAddressByUri(page.getPath()));
+        Connection connection = Jsoup.connect(indexingService.getFullAddressByUri(page.getPath()));
         Document doc = connection.get();
         Elements elements = doc.body().select("*");
         for (Element element : elements) {
@@ -118,7 +131,7 @@ public class SearchServiceImpl implements SearchService {
      */
     public float getRelevance(Page page) {
         float relevance = 0;
-        for (SearchingIndex index : entityService.getLemmasByPage(page)) {
+        for (SearchingIndex index : indexRepository.findByPage(page)) {
             relevance += index.getLemmasCount();
         }
         return relevance;
@@ -177,14 +190,14 @@ public class SearchServiceImpl implements SearchService {
         HashMap<String, Integer> lemmas = lemmatisator.splitTextInToLemmas(query);
         List<Lemma> lemmasList = new ArrayList<>();
 
-        long pagesCount = entityService.getAllPagesCount();
+        long pagesCount = pageRepository.count();
         double maximumPercentage = pagesCount - (10 * pagesCount) / 100.0;
 
         for (Map.Entry<String, Integer> map : lemmas.entrySet()) {
-            if (entityService.getLemmasByLemma(map.getKey()).size() == 0) {
+            if (lemmaRepository.findByLemma(map.getKey()).size() == 0) {
                 continue;
             }
-            Lemma lemma = entityService.getLemmaByLemma(map.getKey());
+            Lemma lemma = lemmaRepository.findByLemma(map.getKey()).get(0);
             if (lemma.getFrequency() < maximumPercentage) {
                 lemmasList.add(lemma);
             }
@@ -255,8 +268,9 @@ public class SearchServiceImpl implements SearchService {
         List<RelevancePageForResponse> pagesForResponse = new ArrayList<>();
         for (RelevancePage page : pages) {
             RelevancePageForResponse pageForResponse = new RelevancePageForResponse();
-            pageForResponse.setSite(entityService.getPageByPath(page.getUri()).getSite().getUrl());
-            pageForResponse.setSiteName(entityService.getPageByPath(page.getUri()).getSite().getName());
+            Page pageByPath = pageRepository.findByPath(page.getUri()).get(0);
+            pageForResponse.setSite(pageByPath.getSite().getUrl());
+            pageForResponse.setSiteName(pageByPath.getSite().getName());
             pageForResponse.setUri(page.getUri());
             pageForResponse.setTitle(page.getTitle());
             pageForResponse.setSnippet(page.getSnippet());
@@ -267,6 +281,4 @@ public class SearchServiceImpl implements SearchService {
 
         return pagesForResponse;
     }
-
-
 }
