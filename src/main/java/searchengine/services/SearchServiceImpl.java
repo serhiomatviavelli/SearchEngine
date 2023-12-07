@@ -60,7 +60,11 @@ public class SearchServiceImpl implements SearchService {
         query = query.toLowerCase();
         List<Page> pages;
         String firstWordInQuery = lemmatisator.getLemma(query.split("\\s+")[0]);
-        Lemma firstWordInQueryLemma = lemmaRepository.findByLemma(firstWordInQuery).get(0);
+        List<Lemma> firstWordInQueryLemmas = lemmaRepository.findByLemma(firstWordInQuery);
+        if (firstWordInQueryLemmas.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Lemma firstWordInQueryLemma = firstWordInQueryLemmas.get(0);
         List<SearchingIndex> indexes = indexRepository.findByLemma(firstWordInQueryLemma);
         if (site == null) {
             pages = indexes.stream().map(SearchingIndex::getPage).toList();
@@ -69,19 +73,15 @@ public class SearchServiceImpl implements SearchService {
             pages = indexes.stream().map(SearchingIndex::getPage).filter(page -> page.getSite().equals(siteByUrl)).toList();
         }
         List<Lemma> lemmasList = getLemmasListForSearching(query);
-
         sortLemmasByFrequency(lemmasList);
-
         List<RelevancePage> relevancePages = null;
         try {
             relevancePages = getRelevancePages(lemmasList, pages, query);
         } catch (IOException e) {
             e.printStackTrace();
         }
-
         assert relevancePages != null;
         sortPagesByRelevance(relevancePages);
-
         return relevancePages;
     }
 
